@@ -1,0 +1,116 @@
+CockroachDB
+
+Installation (Windows)
+	download/install CockroachDB:
+			
+		https://www.cockroachlabs.com/docs/releases/?filters=windows#v25-4
+		dd to ENV PATH: C:\CockroachDB\cockroach-v25.4.2.windows-6.2-amd64\cockroach-v25.4.2.windows-6.2-amd64
+		
+		 nitialize the cluster:
+				cockroach start-single-node --insecure --listen-addr=localhost:26257 --http-addr=localhost:8080
+		Run as a background service
+
+		Access the Admin UI:
+				http://localhost:8080/#/overview/list
+
+Installation (Linux)
+
+	Set environment:	ubuntu:~$ export crdb_release="v23.1.2"; export architecture=$(dpkg --print-architecture)
+	Download: 	ubuntu:~$ cd /home/ubuntu; curl https://binaries.cockroachdb.com/cockroach-${crdb_release}.linux-${architecture}.tgz | tar -xz
+	Copy binary:	ubuntu:/home/ubuntu$ cp -i cockroach-${crdb_release}.linux-${architecture}/cockroach /usr/local/bin/; which cockroach
+	
+	Deploy 3 nodes in the background:
+
+	ubuntu:/home/ubuntu$ cockroach start --insecure --store=cockroach-data/cockroach1 --listen-addr=localhost:26257 --http-addr=0.0.0.0:8080 --join=localhost:26257,localhost:26258,localhost:26259 --background
+	ubuntu:/home/ubuntu$ cockroach start --insecure --store=cockroach-data/cockroach2 --listen-addr=localhost:26258 --http-addr=0.0.0.0:8081 --join=localhost:26257,localhost:26258,localhost:26259 --background
+	ubuntu:/home/ubuntu$ cockroach start --insecure --store=cockroach-data/cockroach3 --listen-addr=localhost:26259 --http-addr=0.0.0.0:8082 --join=localhost:26257,localhost:26258,localhost:26259 --background
+	
+	Initialize the cluster:
+
+	ubuntu:/home/ubuntu$ cockroach init --insecure --host=localhost:26257
+
+	Access cluster:
+
+	ubuntu:/home/ubuntu$ cockroach sql --insecure --host=localhost:26257
+
+	initialize movr workload:
+
+	ubuntu:/home/ubuntu$ cockroach workload init movr 'postgresql://root@localhost:26257?sslmode=disable'
+
+	Test resiliency by killing Node1:
+
+	ubuntu:/home/ubuntu$ kill -9 $(ps -eaf | grep -v "grep" | grep cockroach1 | awk '{print $2}')
+
+	restart Node1:
+
+	ubuntu:/home/ubuntu$ cockroach start --insecure --store=cockroach-data/cockroach1 --listen-addr=localhost:26257 --http-addr=0.0.0.0:8080 --join=localhost:26257,localhost:26258,localhost:26259 --background
+	
+	Decommission a node - retire a node with a 3 node cluster:
+
+		ubuntu:/home/ubuntu$ SET CLUSTER SETTING server.shutdown.drain_wait = '8s';
+		ubuntu:/home/ubuntu$ SET CLUSTER SETTING server.time_until_store_dead = '15m0s';`
+
+		Best practices dictate that our cluster must have minimal number of nodes in order to stay healthy.
+		Added a fourth node for scalability here to ensure we can decommission the first node to ensure that the first node's data is transitioned to the new node.
+		Observe how data moves to the new node in CockroachDB UI Port 8083 Replicas per Node graph.
+
+		ubuntu:/home/ubuntu$ cockroach start --insecure --store=cockroach-data/cockroach4 --listen-addr=localhost:26260 --http-addr=0.0.0.0:8083 --join=localhost:26258,localhost:26259,localhost:26260 --background
+
+		It is important to drain a node before complete removal to decommission load balancer connections as a best practice. 
+
+		ubuntu:/home/ubuntu$ cockroach node drain 1 --host=localhost:26257 --drain-wait=15m --insecure
+		ubuntu:/home/ubuntu$ grep 'drain' cockroach-data/cockroach1/logs/cockroach.log
+
+		Since the node using the port 26257 is being drained, lets use the next available port 26258 to check the status of the node. 
+		The SQL result in the is_draining column has registered the id=1 as true to drain the node.
+
+		ubuntu:/home/ubuntu$ cockroach node status --decommission --insecure --host=localhost:26258
+		
+		
+	
+The following areas are critical:
+
+Production Checklist: Reviewing hardware requirements (CPU, RAM, storage) and operating system settings (e.g., configuring Transparent Huge Pages).
+
+
+Security (TLS/SSL): Using cockroach cert commands to generate CA, node, and client certificates for secure communication.
+Networking: Ensuring TCP communication on ports 26257 (internal) and 8080 (admin UI).
+Deployment Methods:
+Local: Using binaries to create a multi-node cluster for testing.
+Kubernetes: Using the CockroachDB operator for orchestrated, persistent deployments.
+Cloud: Deploying on AWS, GCP, or Azure using specific VM configurations.
+Data Distribution: Configuring --locality to optimize for geo-partitioning and high availability across data centers.
+
+Administration
+	simulation of region failures, upgrade/patching from V22.x to V24.x
+support - 
+create design documentation and runbooks - Build document/upgrade procedures in Confluence
+advise/coach other technical team members - educate on CockroachDB-specific commands
+
+Storage expertise
+
+cross-site data replication (RAFT) - Understanding RAFT consensus protcol, RAFT log, RAFT quorum, range replicas, voting and non-voting replicas, leaseholders, Replication Dashboard
+backup/restore - maintain backup pod (pgbackrest full and incremental backup images)
+disaster recovery - Multi-region 9 node cluster with region survivability
+performance and failover testing - Test region failure
+data consistency/validation
+database performance monitoring and tuning - Cockroach console expertise, Slow Query Log
+
+SME-level administration and troubleshooting - Hotspot node detection, analysis, and resolution
+
+CockroachDB Highlights:
+
+    A distributed SQL database, designed to be highly available and resilient to failures
+    Leverage a distributed architecture to ensure that data is always available, even if a node or region fails
+    Provide a number of features such as automatic failover, continuous replication, and data consistency
+    High availability in the event of failures
+    Resilient, it can continue to operate even if a node or region fails.
+    Scalable to meet the needs of even the most demanding applications and seasonal requests
+    Performance under heavy load
+    Flexibility to quickly grow when loads reach a threshold
+    Security to protect data
+    Locality to meet regulation and compliance, such as GDRP
+    Read and Write from anywhere, regardless of zone, data center location, or region
+    Observability with Datadog, New Relic, Dynatrace, Honey Comb, or the open source alternative Open Telemetry:
+    	Application: traces, logs, metrics
+   	Database monitoring: logs, metrics
